@@ -1,6 +1,7 @@
 import numpy as np
 from PIL import Image
 import time
+import multiprocessing as mp
 
 
 def load_image_to_array(image_file_path: str) -> np.array:
@@ -19,14 +20,21 @@ def create_gaussian_kernel(kernel_size: int, sigma: float) -> np.array:
     return kernel_1d / np.sum(kernel_1d)
 
 
+def convolve(input_image: np.array, output_image: np.array, kernel: np.array, layer: int) -> None:
+    for row in range(input_image.shape[0]):
+        output_image[row, :, layer] = np.convolve(input_image[row, :, layer], kernel, mode='same')
+    for col in range(input_image.shape[1]):
+        output_image[:, col, layer] = np.convolve(output_image[:, col, layer], kernel, mode='same')
+
+
 def convolve_image(input_image: np.array, kernel: np.array) -> np.array:
+    pool = mp.Pool(processes=3)
     # create copy
     convolved_image = np.zeros_like(input_image)
     for colour_index in range(convolved_image.shape[2]):
-        for row in range(input_image.shape[0]):
-            convolved_image[row, :, colour_index] = np.convolve(input_image[row, :, colour_index], kernel, mode='same')
-        for col in range(input_image.shape[1]):
-            convolved_image[:, col, colour_index] = np.convolve(convolved_image[:, col, colour_index], kernel, mode='same')
+        pool.apply_async(convolve, args=(input_image, convolved_image, kernel, colour_index))
+    pool.close()
+    pool.join()
     return convolved_image
 
 
@@ -35,7 +43,7 @@ def run_demo():
     output_image_name = "blurry dog"
     output_image_extension = ".jpg"
 
-    kernel_size = 50
+    kernel_size = 5
     sigma = 3.0
     kernel = create_gaussian_kernel(kernel_size, sigma)
 
