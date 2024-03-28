@@ -20,21 +20,27 @@ def create_gaussian_kernel(kernel_size: int, sigma: float) -> np.array:
     return kernel_1d / np.sum(kernel_1d)
 
 
-def convolve(input_image: np.array, output_image: np.array, kernel: np.array, layer: int) -> None:
-    for row in range(input_image.shape[0]):
-        output_image[row, :, layer] = np.convolve(input_image[row, :, layer], kernel, mode='same')
-    for col in range(input_image.shape[1]):
-        output_image[:, col, layer] = np.convolve(output_image[:, col, layer], kernel, mode='same')
+def convolve_row(input_image: np.array, output_image: np.array, kernel: np.array, row: int, layer: int) -> None:
+    output_image[row, :, layer] = np.convolve(input_image[row, :, layer], kernel, mode='same')
+
+
+def convolve_col(input_image: np.array, output_image: np.array, kernel: np.array, col: int, layer: int) -> None:
+    output_image[:, col, layer] = np.convolve(input_image[:, col, layer], kernel, mode='same')
 
 
 def convolve_image(input_image: np.array, kernel: np.array) -> np.array:
-    pool = mp.Pool(processes=3)
-    # create copy
+    pool = mp.Pool(processes=16)
     convolved_image = np.zeros_like(input_image)
     for colour_index in range(convolved_image.shape[2]):
-        pool.apply_async(convolve, args=(input_image, convolved_image, kernel, colour_index))
+
+        for row in range(input_image.shape[0]):
+            pool.apply_async(convolve_row, args=(input_image, convolved_image, kernel, row, colour_index))
+
+        for col in range(input_image.shape[1]):
+            pool.apply_async(convolve_col, args=(input_image, convolved_image, kernel, col, colour_index))
     pool.close()
     pool.join()
+
     return convolved_image
 
 
