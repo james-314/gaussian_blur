@@ -2,6 +2,7 @@ import numpy as np
 from PIL import Image
 import time
 import multiprocessing as mp
+import pyopencl as cl
 
 
 def load_image_to_array(image_file_path: str) -> np.array:
@@ -45,22 +46,54 @@ def convolve_image(input_image: np.array, kernel: np.array) -> np.array:
 
 
 def run_demo():
-    input_image_path = "dog.jpg"
-    output_image_name = "blurry dog"
-    output_image_extension = ".jpg"
+    # input_image_path = "dog.jpg"
+    # output_image_name = "blurry dog"
+    # output_image_extension = ".jpg"
+    #
+    # kernel_size = 5
+    # sigma = 3.0
+    # kernel = create_gaussian_kernel(kernel_size, sigma)
+    #
+    # image_as_array = load_image_to_array(input_image_path)
+    #
+    # start = time.time_ns()
+    # convolved_image = convolve_image(image_as_array, kernel)
+    # end = time.time_ns()
+    #
+    # print(f"convolution took: {(end - start) / 1000_000_000:.3f}s")
+    # save_array_as_image(convolved_image, f"alt-{output_image_name}-{kernel_size}k{sigma:.1f}s{output_image_extension}")
+    rng = np.random.default_rng()
+    a_np = rng.random(50000, dtype=np.float32)
+    b_np = rng.random(50000, dtype=np.float32)
 
-    kernel_size = 5
-    sigma = 3.0
-    kernel = create_gaussian_kernel(kernel_size, sigma)
+    ctx = cl.create_some_context()
+    queue = cl.CommandQueue(ctx)
 
-    image_as_array = load_image_to_array(input_image_path)
+    mf = cl.mem_flags
+    a_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=a_np)
+    b_g = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=b_np)
 
-    start = time.time_ns()
-    convolved_image = convolve_image(image_as_array, kernel)
-    end = time.time_ns()
+    prg = cl.Program(ctx, """
+    __kernel void sum(
+        __global const float *a_g, __global const float *b_g, __global float *res_g)
+    {
+      int gid = get_global_id(0);
+      res_g[gid] = a_g[gid] + b_g[gid];
+    }
+    """).build()
 
-    print(f"convolution took: {(end - start) / 1000_000_000:.3f}s")
-    save_array_as_image(convolved_image, f"alt-{output_image_name}-{kernel_size}k{sigma:.1f}s{output_image_extension}")
+    res_g = cl.Buffer(ctx, mf.WRITE_ONLY, a_np.nbytes)
+    knl = prg.sum  # Use this Kernel object for repeated calls
+    knl(queue, a_np.shape, None, a_g, b_g, res_g)
+
+    res_np = np.empty_like(a_np)
+    cl.enqueue_copy(queue, res_np, res_g)
+
+    # Check on CPU with Numpy:
+    error_np = res_np - (a_np + b_np)
+    print(f"Error:\n{error_np}")
+    print(f"Norm: {np.linalg.norm(error_np):.16e}")
+    assert np.allclose(res_np, a_np + b_np)
 
 
 if __name__ == "__main__":
